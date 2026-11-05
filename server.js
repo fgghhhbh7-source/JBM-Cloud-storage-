@@ -78,10 +78,16 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     const id = uuidv4();
     const now = Date.now();
 
-    db.prepare(`
-      INSERT INTO files (id, phone, file_id, name, type, mime, size, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, phone, fileId, filename, mediaType, file.mimetype, file.size, now);
+    db.insert({
+      id,
+      phone,
+      file_id: fileId,
+      name: filename,
+      type: mediaType,
+      mime: file.mimetype,
+      size: file.size,
+      created_at: now
+    });
 
     res.json({
       success: true,
@@ -108,12 +114,14 @@ app.get('/files', (req, res) => {
       return res.status(400).json({ success: false, message: 'phone required' });
     }
 
-    const rows = db.prepare(`
-      SELECT id, name, type, mime, size, created_at AS at
-      FROM files
-      WHERE phone = ?
-      ORDER BY created_at DESC
-    `).all(phone);
+    const rows = db.findByPhone(phone).map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      mime: r.mime,
+      size: r.size,
+      at: r.created_at
+    }));
 
     res.json({ success: true, files: rows });
   } catch (err) {
@@ -130,10 +138,7 @@ app.get('/download/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'phone required' });
     }
 
-    const row = db.prepare(
-      'SELECT * FROM files WHERE id = ? AND phone = ?'
-    ).get(req.params.id, phone);
-
+    const row = db.findOne(req.params.id, phone);
     if (!row) {
       return res.status(404).json({ success: false, message: 'File not found' });
     }
@@ -168,11 +173,8 @@ app.delete('/files/:id', (req, res) => {
       return res.status(400).json({ success: false, message: 'phone required' });
     }
 
-    const info = db.prepare(
-      'DELETE FROM files WHERE id = ? AND phone = ?'
-    ).run(req.params.id, phone);
-
-    if (info.changes === 0) {
+    const ok = db.remove(req.params.id, phone);
+    if (!ok) {
       return res.status(404).json({ success: false, message: 'File not found' });
     }
 
