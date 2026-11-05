@@ -1,21 +1,47 @@
-const Database = require('better-sqlite3');
+const fs = require('fs');
 const path = require('path');
 
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'jbm-storage.db');
-const db = new Database(dbPath);
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'jbm-storage.json');
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS files (
-    id TEXT PRIMARY KEY,
-    phone TEXT NOT NULL,
-    file_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL,
-    mime TEXT,
-    size INTEGER DEFAULT 0,
-    created_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_files_phone ON files(phone);
-`);
+function readAll() {
+  try {
+    if (!fs.existsSync(dbPath)) return [];
+    const raw = fs.readFileSync(dbPath, 'utf8');
+    const data = JSON.parse(raw || '[]');
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error('DB read error:', e.message);
+    return [];
+  }
+}
 
-module.exports = db;
+function writeAll(rows) {
+  fs.writeFileSync(dbPath, JSON.stringify(rows, null, 2), 'utf8');
+}
+
+function insert(row) {
+  const rows = readAll();
+  rows.push(row);
+  writeAll(rows);
+  return row;
+}
+
+function findByPhone(phone) {
+  return readAll()
+    .filter((r) => r.phone === phone)
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+}
+
+function findOne(id, phone) {
+  return readAll().find((r) => r.id === id && r.phone === phone) || null;
+}
+
+function remove(id, phone) {
+  const rows = readAll();
+  const next = rows.filter((r) => !(r.id === id && r.phone === phone));
+  const changed = next.length !== rows.length;
+  if (changed) writeAll(next);
+  return changed;
+}
+
+module.exports = { insert, findByPhone, findOne, remove };
